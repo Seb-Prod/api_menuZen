@@ -1,8 +1,6 @@
 <?php
 require_once __DIR__ . '/../../controllers/v1/RecipeController.php';
 
-$recipeController = new RecipeConroller();
+$recipeController = new RecipeController();
 
-if ($_SERVER['REQUEST_URI'] === '/recipes' && $_SERVER['REQUEST_METHOD'] === 'GET') {
-    $recipeController->index();
-}
+$router->get('/api_MenuZen/public/v1/recipes', [$recipeController, 'index']);

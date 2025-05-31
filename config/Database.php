@@ -57,7 +57,7 @@ class Database
             $this->connexion->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         } catch (PDOException $e) {
             // En cas d'erreur de connexion, afficher le message d'erreur
-            echo "Erreur de connexion à la base de données : {$e->getMessage()}";
+            //echo "Erreur de connexion à la base de données";
         }
         // Retourner l'objet de connexion (ou null en cas d'échec)
         return $this->connexion;
