@@ -51,7 +51,31 @@ class User
         return $query->rowCount() > 0;
     }
 
-    private function generateToken():string{
+    public function verifyEmailToken(string $token): bool
+    {
+        $sql = "SELECT id, is_active FROM users WHERE verification_token = :token LIMIT 1";
+        $stmt = $this->connexion->prepare($sql);
+        $stmt->bindParam(':token', $token);
+        $stmt->execute();
+
+        if ($stmt->rowCount() === 1) {
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($user['is_active'] == 1) {
+                return false; // déjà activé
+            }
+
+            $update = "UPDATE users SET is_active = 1, verification_token = NULL, updated_at = NOW() WHERE id = :id";
+            $stmtUpdate = $this->connexion->prepare($update);
+            $stmtUpdate->bindParam(':id', $user['id']);
+            return $stmtUpdate->execute();
+        }
+
+        return false;
+    }
+
+    private function generateToken(): string
+    {
         return bin2hex(random_bytes(32));
     }
 }

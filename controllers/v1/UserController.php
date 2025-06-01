@@ -66,7 +66,9 @@ class UserController
             $verificationLink = $adress_api . "verify-email?token=" . urlencode($user->verification_token);
 
             // Envoi de l'email
-            sendVerificationEmail($user->email, $user->username, $verificationLink);
+            if (!sendVerificationEmail($user->email, $user->username, $verificationLink)) {
+                Response::error("L'utilisateur a été créé mais l'email de vérification n'a pas pu être envoyé", 500);
+            }
 
             Response::success("Utilisateur enregistré. Un e-mail de vérification a été envoyé.", [
                 'email' => $user->email
@@ -76,7 +78,23 @@ class UserController
         }
     }
 
-    public function verifyEmail(){
-        echo "je suis bien ici";
+    public function verifyEmail()
+    {
+        $token = $_GET['token'] ?? null;
+
+        if (!$token) {
+            Response::error("Le token est manquant", 400);
+        }
+
+        $database = new Database();
+        $db = $database->getConnexion();
+
+        $user = new User($db);
+
+        if ($user->verifyEmailToken($token)) {
+            Response::success("Compte activé avec succès");
+        } else {
+            Response::error("Token invalide ou compte déjà activé", 400);
+        }
     }
 }
