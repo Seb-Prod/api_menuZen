@@ -1,4 +1,5 @@
 <?php
+
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
@@ -28,6 +29,10 @@ function sendVerificationEmail(string $to, string $username, string $verificatio
         $mail->setFrom($mailConfig['from_email'], $mailConfig['from_name']);
         $mail->addAddress($to, $username);
 
+        // Encodage
+        $mail->CharSet = 'UTF-8';
+        $mail->Encoding = 'base64';
+
         // Contenu
         $mail->isHTML(true);
         $mail->Subject = 'Vérification de votre adresse e-mail';
@@ -40,7 +45,6 @@ function sendVerificationEmail(string $to, string $username, string $verificatio
 
         $mail->send();
         return true;
-
     } catch (Exception $e) {
         error_log("Erreur mail : " . $mail->ErrorInfo);
         return false;

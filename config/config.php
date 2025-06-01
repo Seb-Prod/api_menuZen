@@ -52,6 +52,9 @@ try {
         'jwt_secret' => $env['JWT_SECRET']
     ];
 
+    // Adresse de l'api
+    $adress_api = $env['API_ADRESS'];
+
     // Configuration des emails
     $mail_config = [
         'smtp_host' => $env['MAIL_HOST'],
@@ -61,12 +64,13 @@ try {
         'smtp_secure' => $env['MAIL_SECURE'] ?? 'tls',
         'smtp_port' => (int)$env['MAIL_PORT'],
         'from_email' => $env['MAIL_FROM_EMAIL'],
-        'from_name' => $env['MAIL_FROM_NAME']
+        'from_name' => $env['MAIL_FROM_NAME'],
     ];
 
     // Retourner la configuration complète
     return array_merge($db_config, [
         'mail' => $mail_config,
+        'adress_api' => $adress_api,
         'environment' => $env['APP_ENV'] ?? determineEnvironment()
     ]);
 } catch (Exception $e) {

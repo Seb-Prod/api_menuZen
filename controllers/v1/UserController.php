@@ -3,6 +3,7 @@ require_once __DIR__ . '/../../models/User.php';
 include_once __DIR__ . '/../../config/Database.php';
 require_once __DIR__ . '/../../core/Response.php';
 require_once __DIR__ . '/../../helpers/Validator.php';
+require_once __DIR__ . '/../../helpers/Mailer.php';
 
 class UserController
 {
@@ -60,12 +61,22 @@ class UserController
 
         // Tentative de création d'un user
         if ($user->store()) {
-            Response::success("Utilisateur enregistré avec succès", [
-                'username' => $user->username,
+            $config = require __DIR__ . '/../../config/config.php';
+            $adress_api = $config['adress_api'];
+            $verificationLink = $adress_api . "verify-email?token=" . urlencode($user->verification_token);
+
+            // Envoi de l'email
+            sendVerificationEmail($user->email, $user->username, $verificationLink);
+
+            Response::success("Utilisateur enregistré. Un e-mail de vérification a été envoyé.", [
                 'email' => $user->email
             ], 201);
         } else {
             Response::error("Une erreur est survenue lors de l'enregistrement de l'utilisateur", 500);
         }
+    }
+
+    public function verifyEmail(){
+        echo "je suis bien ici";
     }
 }
