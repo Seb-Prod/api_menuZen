@@ -32,6 +32,13 @@ class Validator
         ];
     }
 
+    public static function requiredString(): callable
+    {
+        return function ($val) {
+            return !empty($val) && is_string($val);
+        };
+    }
+
     public static function requiredStringMax($maxLength = PHP_INT_MAX): callable
     {
         return function ($val) use ($maxLength) {
