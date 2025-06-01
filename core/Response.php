@@ -17,11 +17,22 @@ class Response
 
     public static function error($message, int $statusCode = 400)
     {
-        self::json(['error' => $message], $statusCode);
+        self::json(
+            [
+                'status' => 'error',
+                'message' => $message
+            ],
+            $statusCode
+        );
     }
+
 
     public static function success($message, array $data = [], int $statusCode = 200)
     {
-        self::json(['message' => $message, 'data' => $data], $statusCode);
+        self::json([
+            'status' => 'success',
+            'message' => $message,
+            'data' => $data
+        ], $statusCode);
     }
 }
