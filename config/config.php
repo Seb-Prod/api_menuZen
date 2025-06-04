@@ -13,7 +13,6 @@ require_once __DIR__ . '/env_loader.php';
 try {
     // Déterminer l'environnement actuel
     $current_env = determineEnvironment();
-
     // Charger les variables d'environnement selon l'environnement détecté
     $env = loadEnvironmentVars();
 

@@ -35,7 +35,8 @@ class User
         $this->username = htmlspecialchars(strip_tags($this->username));
         $this->email = htmlspecialchars(strip_tags($this->email));
         $this->password = password_hash($this->password, PASSWORD_DEFAULT);
-        $this->verification_token = $this->generateVerificationToken();
+        $this->generateVerificationToken();
+        $this->verification_token = $this->verification_token;
 
         $query->bindParam(":username", $this->username);
         $query->bindParam(":email", $this->email);
@@ -170,13 +171,55 @@ class User
 
     /** 
      * Met à jour le token d'activation du compte 
-    */
+     */
     public function updateVerificationToken()
     {
         $query = "UPDATE users SET verification_token = :token WHERE email = :email";
         $stmt = $this->conn->prepare($query);
         $stmt->bindParam(':token', $this->verification_token);
         $stmt->bindParam(':email', $this->email);
+        return $stmt->execute();
+    }
+
+    public function getAll()
+    {
+        $stmt = $this->conn->query("SELECT id_user, username, email, is_active, role, created_at FROM users");
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function deleteById($id)
+    {
+        $stmt = $this->conn->prepare("DELETE FROM users WHERE id_user = :id");
+        $stmt->bindParam(':id', $id);
+        return $stmt->execute();
+    }
+
+    public function toggleActiveById($id)
+    {
+        // Récupère l’état actuel
+        $stmt = $this->conn->prepare("SELECT is_active FROM users WHERE id_user = :id");
+        $stmt->bindParam(':id', $id);
+        $stmt->execute();
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$user) return false;
+
+        $newStatus = $user['is_active'] ? 0 : 1;
+
+        $stmt = $this->conn->prepare("UPDATE users SET is_active = :status WHERE id_user = :id");
+        $stmt->bindParam(':status', $newStatus);
+        $stmt->bindParam(':id', $id);
+        return $stmt->execute();
+    }
+
+    public function updateRole($id, $role)
+    {
+        $validRoles = ['user', 'admin'];
+        if (!in_array($role, $validRoles)) return false;
+
+        $stmt = $this->conn->prepare("UPDATE users SET role = :role WHERE id_user = :id");
+        $stmt->bindParam(':role', $role);
+        $stmt->bindParam(':id', $id);
         return $stmt->execute();
     }
 }

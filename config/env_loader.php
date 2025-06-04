@@ -16,7 +16,7 @@ function determineEnvironment()
 
     $is_local = (
         $hostname === 'localhost' ||
-        in_array($server_addr, ['127.0.0.1', '::1']) ||
+        in_array($server_addr, ['127.0.0.1', '::1' , '192.168.1.69']) ||
         strpos($hostname, '.local') !== false ||
         strpos($_SERVER['HTTP_HOST'] ?? '', 'localhost') !== false
     );
