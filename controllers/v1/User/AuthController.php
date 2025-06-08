@@ -1,5 +1,7 @@
 <?php
+
 require_once __DIR__ . '/../../../models/User.php';
+require_once __DIR__ . '/../../../models/RefreshToken.php';
 require_once __DIR__ . '/../../../config/Database.php';
 require_once __DIR__ . '/../../../core/Response.php';
 require_once __DIR__ . '/../../../helpers/Validator.php';
@@ -8,229 +10,183 @@ require_once __DIR__ . '/../../../helpers/JWT.php';
 
 class AuthController
 {
-    /**
-     * Instancie un objet User avec une connexion à la base de données
-     */
-    private function getUserInstance(): User
+    private function getDB()
     {
         $database = new Database();
         $db = $database->getConnexion();
-
         if ($db === null) {
-            Response::error('Impossible de se connecter à la base de données', 500);
+            Response::error('Connexion à la base de données impossible', 500);
         }
-
-        return new User($db);
+        return $db;
     }
 
-    /**
-     * Inscription d’un nouvel utilisateur + envoi d’un e-mail de vérification
-     */
+    private function getUser(): User
+    {
+        return new User($this->getDB());
+    }
+
+    private function getConfig(): array
+    {
+        return require __DIR__ . '/../../../config/config.php';
+    }
+
     public function register()
     {
-        $user = $this->getUserInstance();
         $data = (array) json_decode(file_get_contents("php://input"), true);
 
-        // Règles de validation
         $rules = [
-            'username' => Validator::withMessage(
-                Validator::requiredStringMax(50),
-                "Un nom d'utilisateur est obligatoire et ne doit pas dépasser 50 caractères"
-            ),
-            'email' => Validator::withMessage(
-                Validator::email(),
-                "Un email valide est obligatoire"
-            ),
-            'password' => Validator::withMessage(
-                Validator::password(),
-                "Le mot de passe doit comporter 8 caractères, une majuscule, une minuscule et un chiffre"
-            )
+            'username' => Validator::withMessage(Validator::requiredStringMax(50), "Nom d'utilisateur requis (max 50 caractères)"),
+            'email' => Validator::withMessage(Validator::email(), "Email valide requis"),
+            'password' => Validator::withMessage(Validator::password(), "Mot de passe faible (8 caractères, majuscule, minuscule, chiffre)")
         ];
 
-        // Validation des données
         $errors = Validator::validate($data, $rules);
-        if (!empty($errors)) {
-            Response::error($errors, 400);
+        if ($errors) Response::error($errors, 400);
+
+        $user = $this->getUser();
+        foreach (['username', 'email', 'password'] as $field) {
+            $user->$field = $data[$field];
         }
 
-        // Hydratation de l'objet User
-        foreach (array_keys($rules) as $key) {
-            if (isset($data[$key])) {
-                $user->$key = $data[$key];
-            }
-        }
-
-        // Vérifie si l’utilisateur existe déjà
         if ($user->exists()) {
             Response::error("Nom d'utilisateur ou email déjà utilisé", 409);
         }
 
-        // Enregistre l’utilisateur
-        if ($user->store()) {
-            $config = require __DIR__ . '/../../../config/config.php';
-            $adress_api = $config['adress_api'];
-            $verificationLink = $adress_api . "verify-email?token=" . urlencode($user->verification_token);
-
-            // Envoie de l’email de vérification
-            if (!sendVerificationEmail($user->email, $user->username, $verificationLink)) {
-                Response::error("Utilisateur créé mais l'email de vérification n'a pas pu être envoyé", 500);
-            }
-
-            Response::success("Utilisateur enregistré. Un e-mail de vérification a été envoyé.", [
-                'email' => $user->email
-            ], 201);
-        } else {
-            Response::error("Une erreur est survenue lors de l'enregistrement de l'utilisateur", 500);
+        if (!$user->store()) {
+            Response::error("Erreur lors de l'enregistrement", 500);
         }
+
+        $link = $this->getConfig()['adress_api'] . "verify-email?token=" . urlencode($user->verification_token);
+        if (!sendVerificationEmail($user->email, $user->username, $link)) {
+            Response::error("Utilisateur créé, mais e-mail non envoyé", 500);
+        }
+
+        Response::success("Utilisateur enregistré. Vérification par e-mail envoyée", ['email' => $user->email], 201);
     }
 
-    /**
-     * Connexion d’un utilisateur + génération d’un token JWT
-     */
     public function login()
     {
         $data = (array) json_decode(file_get_contents("php://input"), true);
 
-        // Règles de validation
         $rules = [
-            'email' => Validator::withMessage(
-                Validator::email(),
-                "Un email valide est obligatoire"
-            ),
-            'password' => Validator::withMessage(
-                Validator::requiredString(),
-                "Le mot de passe est requis"
-            )
+            'email' => Validator::withMessage(Validator::email(), "Email valide requis"),
+            'password' => Validator::withMessage(Validator::requiredString(), "Mot de passe requis")
         ];
 
         $errors = Validator::validate($data, $rules);
-        if (!empty($errors)) {
-            Response::error($errors, 400);
-        }
+        if ($errors) Response::error($errors, 400);
 
-        $user = $this->getUserInstance();
+        $user = $this->getUser();
         $user->email = $data['email'];
 
-        // Recherche utilisateur
         if (!$user->findByEmail()) {
             Response::error("Email ou mot de passe incorrect", 401);
         }
 
-        // Vérifie si le compte est temporairement bloqué
         if ($user->locked_until && strtotime($user->locked_until) > time()) {
-            $minutesLeft = ceil((strtotime($user->locked_until) - time()) / 60);
-            Response::error("Compte temporairement bloqué. Réessayez dans $minutesLeft minute(s).", 403);
+            $wait = ceil((strtotime($user->locked_until) - time()) / 60);
+            Response::error("Compte bloqué. Réessayez dans $wait minute(s)", 403);
         }
 
-        // Vérifie si le compte est activé
         if (!$user->is_active) {
-            Response::error("Votre compte n'est pas encore activé.", 403);
+            Response::error("Compte non activé", 403);
         }
 
-        // Vérifie le mot de passe
         if (!password_verify($data['password'], $user->password)) {
             $user->incrementFailedAttempts();
-
             if ($user->failed_attempts >= 3) {
                 $user->lockAccount();
-                Response::error("Trop de tentatives. Compte bloqué pour 15 minutes.", 403);
+                Response::error("Trop de tentatives. Compte bloqué 15 min", 403);
             }
-
             Response::error("Email ou mot de passe incorrect", 401);
         }
 
-        // Connexion réussie : reset des tentatives + mise à jour login
         $user->resetFailedAttempts();
         $user->updateLastLogin();
 
-        // Génération du JWT
-        $config = require __DIR__ . '/../../../config/config.php';
-        $jwt = new JWT($config);
-        $token = $jwt->generer([
+        $jwt = new JWT($this->getConfig());
+
+        $access_token = $jwt->generer([
             'id_user' => $user->id_user,
             'username' => $user->username,
             'email' => $user->email,
             'role' => $user->role
-        ]);
+        ], 3600);
+
+        $refresh_token = $jwt->generer(['id_user' => $user->id_user], 604800);
+
+        $rt = new RefreshToken($this->getDB());
+        $rt->id_user = $user->id_user;
+
+        if ($rt->existsForUser()) {
+            $rt->token = $refresh_token;
+            $rt->expires_at = date("Y-m-d H:i:s", time() + 604800);
+            $rt->update(); // méthode à créer dans le modèle
+        } else {
+            $rt->token = $refresh_token;
+            $rt->expires_at = date("Y-m-d H:i:s", time() + 604800);
+            $rt->store();
+        }
 
         Response::success("Connexion réussie", [
             'id_user' => $user->id_user,
             'username' => $user->username,
             'email' => $user->email,
             'role' => $user->role,
-            'token' => $token
+            'token' => $access_token,
+            'token_expires_in' => 3600,
+            'refresh_token' => $refresh_token,
+            'refresh_token_expires_in' => 604800
         ]);
     }
 
-    /**
-     * Vérifie et active un compte utilisateur via un token
-     */
     public function verifyEmail()
     {
         $token = $_GET['token'] ?? null;
-
         if (!$token) {
-            Response::error("Le token est manquant", 400);
+            Response::error("Token manquant", 400);
         }
 
-        $user = $this->getUserInstance();
-
+        $user = $this->getUser();
         if ($user->verifyEmailToken($token)) {
-            Response::success("Compte activé avec succès");
+            Response::success("Email vérifié, compte activé");
         } else {
             Response::error("Token invalide ou compte déjà activé", 400);
         }
     }
 
-    /**
-     * Réenvoie un mail pour activer le compte
-     *
-     * @return void
-     */
     public function resendVerificationEmail()
     {
         $data = (array) json_decode(file_get_contents("php://input"), true);
 
-        // Validation des données
         $rules = [
-            'email' => Validator::withMessage(
-                Validator::email(),
-                "Un email valide est requis"
-            )
+            'email' => Validator::withMessage(Validator::email(), "Email requis")
         ];
-
         $errors = Validator::validate($data, $rules);
-        if (!empty($errors)) {
-            Response::error($errors, 400);
-        }
+        if ($errors) Response::error($errors, 400);
 
-        // Instancier User
-        $user = $this->getUserInstance();
+        $user = $this->getUser();
         $user->email = $data['email'];
 
         if (!$user->findByEmail()) {
-            Response::error("Aucun compte associé à cet email", 404);
+            Response::error("Aucun compte avec cet email", 404);
         }
 
         if ($user->is_active) {
             Response::error("Le compte est déjà activé", 400);
         }
 
-        // Génère un nouveau token
         $user->generateVerificationToken();
         if (!$user->updateVerificationToken()) {
-            Response::error("Impossible de générer un nouveau token", 500);
+            Response::error("Erreur de génération de token", 500);
         }
 
-        // Envoi e-mail
-        $config = require __DIR__ . '/../../../config/config.php';
-        $adress_api = $config['adress_api'];
-        $verificationLink = $adress_api . "verify-email?token=" . urlencode($user->verification_token);
+        $link = $this->getConfig()['adress_api'] . "verify-email?token=" . urlencode($user->verification_token);
 
-        if (!sendVerificationEmail($user->email, $user->username, $verificationLink)) {
+        if (!sendVerificationEmail($user->email, $user->username, $link)) {
             Response::error("Erreur lors de l'envoi de l'e-mail", 500);
         }
 
-        Response::success("Un nouvel e-mail de vérification a été envoyé");
+        Response::success("Nouveau mail de vérification envoyé");
     }
 }

@@ -22,7 +22,7 @@ class JWT
         }
     }
 
-    public function generer($donnees)
+    public function generer($donnees, $duree)
     {
         // En-tête du JWT
         $header = $this->encoderBase64(json_encode([
@@ -33,7 +33,7 @@ class JWT
         // Charge utile (payload) du JWT
         $payload = $this->encoderBase64(json_encode([
             'iat' => time(), // Timestamp de la création du token
-            'exp' => time() + $this->duree_validite, // Timestamp de l'expiration du token
+            'exp' => time() + $duree, // Timestamp de l'expiration du token
             'data' => $donnees // Les données à inclure dans le token
         ]));
 
