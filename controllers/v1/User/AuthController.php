@@ -124,7 +124,7 @@ class AuthController
 
         // Vérifie si le compte est activé
         if (!$user->is_active) {
-            Response::error("Veuillez vérifier votre adresse e-mail avant de vous connecter", 403);
+            Response::error("Votre compte n'est pas encore activé.", 403);
         }
 
         // Vérifie le mot de passe
