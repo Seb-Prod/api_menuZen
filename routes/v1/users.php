@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../controllers/v1/User/AuthController.php';
 // 🔐 Authentification
 $router->post('/api_menuzen/public/register', [AuthController::class, 'register']);
 $router->post('/api_menuzen/public/login', [AuthController::class, 'login']);
+$router->post('/api_menuzen/public/refresh-token', [AuthController::class, 'refreshToken']);
 $router->get('/api_menuzen/public/verify-email', [AuthController::class, 'verifyEmail']);
 $router->post('/api_menuzen/public/resend-email', [AuthController::class, 'resendVerificationEmail']);
 

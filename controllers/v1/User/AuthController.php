@@ -10,6 +10,8 @@ require_once __DIR__ . '/../../../helpers/JWT.php';
 
 class AuthController
 {
+    private $durationToken = 60; //1200;
+    private $durationTokenRefresh = 604800;
     private function getDB()
     {
         $database = new Database();
@@ -69,18 +71,31 @@ class AuthController
         $data = (array) json_decode(file_get_contents("php://input"), true);
 
         $rules = [
-            'email' => Validator::withMessage(Validator::email(), "Email valide requis"),
+            'login' => Validator::withMessage(Validator::requiredString(), "Identifiant requis (email ou pseudo)"),
             'password' => Validator::withMessage(Validator::requiredString(), "Mot de passe requis")
         ];
 
         $errors = Validator::validate($data, $rules);
         if ($errors) Response::error($errors, 400);
 
-        $user = $this->getUser();
-        $user->email = $data['email'];
+        $login = $data['login'];
+        $password = $data['password'];
 
-        if (!$user->findByEmail()) {
-            Response::error("Email ou mot de passe incorrect", 401);
+        $user = $this->getUser();
+
+        // Déterminer si c'est un email ou un username
+        if (filter_var($login, FILTER_VALIDATE_EMAIL)) {
+            // C'est un email
+            $user->email = $login;
+            $found = $user->findByEmail();
+        } else {
+            // C'est un username
+            $user->username = $login;
+            $found = $user->findByUsername();
+        }
+
+        if (!$found) {
+            Response::error("Email ou pseudo ou mot de passe incorrect", 401);
         }
 
         if ($user->locked_until && strtotime($user->locked_until) > time()) {
@@ -92,13 +107,13 @@ class AuthController
             Response::error("Compte non activé", 403);
         }
 
-        if (!password_verify($data['password'], $user->password)) {
+        if (!password_verify($password, $user->password)) {
             $user->incrementFailedAttempts();
             if ($user->failed_attempts >= 3) {
                 $user->lockAccount();
                 Response::error("Trop de tentatives. Compte bloqué 15 min", 403);
             }
-            Response::error("Email ou mot de passe incorrect", 401);
+            Response::error("Email ou pseudo ou mot de passe incorrect", 401);
         }
 
         $user->resetFailedAttempts();
@@ -111,20 +126,20 @@ class AuthController
             'username' => $user->username,
             'email' => $user->email,
             'role' => $user->role
-        ], 3600);
+        ], $this->durationToken);
 
-        $refresh_token = $jwt->generer(['id_user' => $user->id_user], 604800);
+        $refresh_token = $jwt->generer(['id_user' => $user->id_user], $this->durationTokenRefresh);
 
         $rt = new RefreshToken($this->getDB());
         $rt->id_user = $user->id_user;
 
         if ($rt->existsForUser()) {
             $rt->token = $refresh_token;
-            $rt->expires_at = date("Y-m-d H:i:s", time() + 604800);
-            $rt->update(); // méthode à créer dans le modèle
+            $rt->expires_at = date("Y-m-d H:i:s", time() + $this->durationTokenRefresh);
+            $rt->update();
         } else {
             $rt->token = $refresh_token;
-            $rt->expires_at = date("Y-m-d H:i:s", time() + 604800);
+            $rt->expires_at = date("Y-m-d H:i:s", time() + $this->durationTokenRefresh);
             $rt->store();
         }
 
@@ -134,9 +149,68 @@ class AuthController
             'email' => $user->email,
             'role' => $user->role,
             'token' => $access_token,
-            'token_expires_in' => 3600,
+            'token_expires_at' => time() + $this->durationToken,
             'refresh_token' => $refresh_token,
-            'refresh_token_expires_in' => 604800
+            'refresh_token_expires_at' => time() + $this->durationTokenRefresh,
+        ]);
+    }
+
+    public function refreshToken()
+    {
+        $data = (array) json_decode(file_get_contents("php://input"), true);
+
+        if (empty($data['refreshToken'])) {
+            Response::error("Refresh token manquant", 400);
+        }
+
+        $refreshToken = $data['refreshToken'];
+
+        $rt = new RefreshToken($this->getDB());
+        $tokenData = $rt->findByToken($refreshToken);
+
+        if (!$tokenData) {
+            Response::error("Refresh token invalide", 401);
+        }
+
+        if ($tokenData['revoked']) {
+            Response::error("Refresh token révoqué", 401);
+        }
+
+        if (strtotime($tokenData['expires_at']) < time()) {
+            Response::error("Refresh token expiré", 401);
+        }
+
+        $user = $this->getUser();
+        $user->id_user = $tokenData['id_user'];
+
+        if (!$user->getById()) {
+            Response::error("Utilisateur introuvable", 404);
+        }
+
+        $jwt = new JWT($this->getConfig());
+
+        // ✅ Nouveau token d'accès
+        $access_token = $jwt->generer([
+            'id' => $user->id_user,
+            'username' => $user->username,
+            'email' => $user->email,
+            'role' => $user->role
+        ], $this->durationToken);
+
+        // ✅ Nouveau refresh_token (sécurité renforcée : rotation)
+        $new_refresh_token = $jwt->generer(['id_user' => $user->id_user], $this->durationTokenRefresh);
+
+        // ✅ Mettre à jour le token existant
+        $rt->id_user = $user->id_user;
+        $rt->token = $new_refresh_token;
+        $rt->expires_at = date("Y-m-d H:i:s", time() + $this->durationTokenRefresh);
+        $rt->update();
+
+        Response::success("Nouveau token généré", [
+            'token' => $access_token,
+            'token_expires_at' => time() + $this->durationToken,
+            'refresh_token' => $new_refresh_token,
+            'refresh_token_expires_at' => time() + $this->durationTokenRefresh,
         ]);
     }
 

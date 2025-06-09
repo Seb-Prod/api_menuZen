@@ -73,6 +73,47 @@ class User
         return false;
     }
 
+    /** 
+     * Récupère un utilisateur par son id
+     */
+    public function getById(): ?array
+    {
+        $sql = "SELECT id AS id_user, username, email, role FROM users WHERE id = :id_user LIMIT 1";
+        $stmt = $this->conn->prepare($sql);
+        $stmt->bindParam(':id_user', $this->id_user);
+        $stmt->execute();
+
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
+
+    /**
+     * Récupère un utilisateur par son nom d'utilisateur et remplit les propriétés de l'objet.
+     */
+    public function findByUsername(): bool
+    {
+        $sql = "SELECT * FROM users WHERE username = :username LIMIT 1";
+        $query = $this->conn->prepare($sql);
+
+        $this->username = htmlspecialchars(strip_tags($this->username));
+        $query->bindParam(':username', $this->username);
+        $query->execute();
+
+        if ($query->rowCount() > 0) {
+            $row = $query->fetch(PDO::FETCH_ASSOC);
+            $this->id_user         = $row['id'];  // ou 'id' selon ta colonne
+            $this->username        = $row['username'];
+            $this->email           = $row['email'];
+            $this->password        = $row['password'];
+            $this->role            = $row['role'];
+            $this->is_active       = $row['is_active'];
+            $this->locked_until    = $row['locked_until'];
+            $this->failed_attempts = $row['failed_attempts'];
+            return true;
+        }
+
+        return false;
+    }
+
     /**
      * Vérifie si un utilisateur existe déjà par email ou nom d'utilisateur.
      */
